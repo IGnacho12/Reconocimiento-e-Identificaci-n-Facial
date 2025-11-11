@@ -36,7 +36,7 @@ function Home() {
         .withFaceDescriptor();
 
       if (!detection) return;
-
+                                            // frame actual de la camraa
       const match = faceMatcher.findBestMatch(detection.descriptor); //  faceMatcher, almacena todos los rostros, findBestMatch, lograra que esta expresion retorne, aquel rostro de faceMatcher que se asemeje mas al, detection.descriptor
       setImages((prev) =>
         prev.map((img) => ({

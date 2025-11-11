@@ -1,8 +1,94 @@
-import React from "react";
-import RegisterFaceCard from "../components/registerFace";
-import BotonGuardar from "../components/botonGuardar";
+import { useRef, useEffect } from "react";
+import * as faceapi from "face-api.js";
+import { useCamera } from "@/hooks/useCamera";
+import { useFaceApi } from "@/hooks/useFaceApi";
+import { read, write, destroy } from "@/localStorage";
+import useFetch from "../hooks/useFetch";
+import "../App.css";
+
+
+import RegisterFaceCard from "@/components/registerFace"
+import BotonGuardar from "@/components/botonGuardar"
 
 export default function Test() {
+  const videoRef = useCamera();
+  const canvasRef = useRef(null);
+  const { faceMatcher, images, setImages, syncImages } = useFaceApi();
+
+  // Dibujar cámara en canvas
+  useEffect(() => {
+    const draw = () => {
+      if (videoRef.current && canvasRef.current) {
+        const ctx = canvasRef.current.getContext("2d");
+        ctx.drawImage(videoRef.current, 0, 0, 1280, 800);
+      }
+      requestAnimationFrame(draw);
+    };
+    draw();
+  }, [videoRef]);
+
+  // Detección facial
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!canvasRef.current || !faceMatcher) return;
+
+      const detection = await faceapi
+        .detectSingleFace(
+          canvasRef.current,
+          new faceapi.TinyFaceDetectorOptions()
+        )
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+
+      if (!detection) return;
+      // frame actual de la camraa
+      const match = faceMatcher.findBestMatch(detection.descriptor); //  faceMatcher, almacena todos los rostros, findBestMatch, lograra que esta expresion retorne, aquel rostro de faceMatcher que se asemeje mas al, detection.descriptor
+      setImages((prev) =>
+        prev.map((img) => ({
+          ...img,
+          selected: match.label === img.id.toString(),
+        }))
+      );
+    }, 1000);
+
+    return () => clearInterval(interval); // Evita que se siga ejecutando si el componente se desmonta
+  }, [faceMatcher, setImages]);
+
+  // Subir imagen
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const id = Date.now();
+    const url = URL.createObjectURL(file);
+    write([...read(), { id, path: url, name: file.name }]);
+    syncImages();
+  };
+
+  // Eliminar imagen
+  const handleDelete = (id) => {
+    destroy(id);
+    syncImages();
+  };
+
+  // Obtener todos los alumnos de PIGE
+  const { data: response, loading } = useFetch("https://pig-edev.vercel.app/api/getStudents");
+
+  // cuando llegan los alumnos, los pasamos al estado images
+  useEffect(() => {
+    if (response && Array.isArray(response)) {
+      // adaptamos los datos al formato esperado por tu sistema local
+      const adaptados = response.map(a => ({
+        id: a.id_estudiante,
+        name: a.nombre,
+        dni: a.dni,
+        path: a.avatar,
+        cursoYDivision: a.curso_y_division,
+        selected: false, // inicializamos
+      }));
+      setImages(adaptados);
+    }
+  }, [response, setImages]);
+
   return (
     <main className="grid grid-cols-[320px_1fr] h-screen  text-gray-900 dark:text-gray-100">
       {/* 🧾 Sidebar: Lista de alumnos */}
@@ -12,12 +98,29 @@ export default function Test() {
           <p className="text-xs text-gray-600 dark:text-gray-400">
             Lista de alumnos con reconocimiento facial
           </p>
+          <label className="mt-6 flex flex-col items-center justify-center w-full max-w-md p-2 border border-dashed rounded-2xl cursor-pointer border-gray-400 transition-colors bg-white shadow-md">
+            <span className="text-gray-700 mb-2 font-medium">
+              Cargar Alumno
+            </span>
+            <input type="file" className="hidden" onChange={handleFile} />
+          </label>
         </header>
 
         {/* Lista de RegisterFaceCard */}
-        {[...Array(12)].map((_, i) => (
-          <RegisterFaceCard key={i} />
+
+        {response?.map((alumno) => (
+          <RegisterFaceCard
+            key={alumno.id_estudiante} // 👈 1. Propiedad 'key' añadida
+            nombre={alumno.nombre} // 👈 2. Propiedad 'name' completada con datos
+            id={alumno.id_estudiante}
+            path={alumno.avatar}
+            selected={alumno.selected}
+            onDelete={handleDelete}
+          />
         ))}
+
+
+
       </aside>
 
       {/* 🎥 Sección principal: cámara + alumno activo */}
@@ -26,13 +129,39 @@ export default function Test() {
           <h2 className="text-2xl font-bold">Alumno detectado</h2>
 
           <div className="flex justify-center">
-            <RegisterFaceCard className="max-w-md w-full" />
+            {images
+              .filter((img) => img.selected)
+              .map((img) => (
+                <RegisterFaceCard
+                  key={img.id}
+                  nombre={img.name}
+                  id={img.id}
+                  path={img.path}
+                  selected={img.selected}
+                  onDelete={handleDelete}
+                  className="w-2/7"
+                />
+              ))}
+
+            {/* Si no hay elementos seleccionados (el array filtrado está vacío) */}
+            {images.every(img => !img.selected) && <RegisterFaceCard
+              nombre="??"
+              dni="???"
+              cursoYDivision="??"
+              className="w-2/7"
+            />}
           </div>
         </header>
 
         {/* Canvas de la cámara */}
         <div className="relative flex justify-center items-center w-full max-w-4xl py-2">
-          <canvas className="aspect-video w-full max-w-3xl border border-gray-400/40 rounded-lg shadow-inner bg-gray-50 dark:bg-gray-800"></canvas>
+          <canvas
+            ref={canvasRef}
+            width={1280}
+            height={800}
+            className="w-full max-w-lg rounded-2xl scale-x-[-1]"
+          />
+          <video ref={videoRef} autoPlay className="hidden" />
 
           {/* Overlay opcional: texto o ícono */}
           {/* <span className="absolute text-gray-500 dark:text-gray-400 text-sm">Cámara activa...</span> */}

@@ -1,49 +1,55 @@
-import React from "react";
+import { useRef, useState, useEffect } from "react";
+import * as faceapi from "face-api.js";
+import { write } from "@/localStorage";
 
-export default function RegisterFaceCard({
-  nombre = "Nombre del alumno",
-  dni = "482374782",
-  cursoYDivision = "6IV",
-  materias,
-  className = "",
-}) {
+export default function RegisterFace() {
+  const videoRef = useRef(null);
+  const [status, setStatus] = useState("Cargando cámara...");
+  const [faces, setFaces] = useState([]);
+
+  useEffect(() => {
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoRef.current.srcObject = stream;
+        setStatus("Apunta tu rostro y presiona capturar");
+      } catch {
+        setStatus("Error al acceder a la cámara");
+      }
+    };
+    startCamera();
+  }, []);
+
+  const captureFace = async () => {
+    const detection = await faceapi
+      .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) return setStatus("No se detectó ningún rostro");
+
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoRef.current, 0, 0);
+    const image = canvas.toDataURL("image/png");
+
+    const newFace = { id: Date.now(), path: image, descriptor: detection.descriptor };
+    setFaces((prev) => [...prev, newFace]);
+    write([...faces, newFace]);
+    setStatus("Rostro registrado correctamente");
+  };
+
   return (
-    <button
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg hover:cursor-pointer hover:scale-105 hover:border-bg-light transition-all shadow-sm border-2 border-gray-600/40  ${className}`}
-    >
-      {/* Avatar del estudiante */}
-      <img
-        src="https://images.unsplash.com/photo-1519594774370-0b631f3d527e?ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fGNhcmElMjBkZSUyMHBlcnJvfGVufDB8fDB8fHww&fm=jpg&q=60&w=3000"
-        alt={nombre}
-        className="h-12 w-12 rounded-full object-cover border border-gray-300 dark:border-gray-600"
-      />
-
-      {/* Información del alumno */}
-      <article className="flex flex-col justify-between w-full">
-        <div className="flex flex-col w-full">
-          <article className="flex-row flex justify-between items-center w-full">
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {nombre}
-            </h1>
-            {materias && (
-              <span className="text-xs text-gray-700 dark:text-gray-300">
-                [ {materias} ]
-              </span>
-            )}
-          </article>
-
-          <article className="flex-row flex justify-between items-center w-full mt-1">
-            <span className="text-sm text-gray-700 dark:text-gray-300">
-              DNI: {dni}
-            </span>
-            {cursoYDivision && (
-              <span className="text-xs text-gray-700 dark:text-gray-300">
-                {cursoYDivision}
-              </span>
-            )}
-          </article>
-        </div>
-      </article>
-    </button>
-  );
-}
+    <section className="flex flex-col items-center gap-3 p-4">
+      <video ref={videoRef} autoPlay muted className="w-72 h-56 rounded-xl shadow" />
+      <button
+        onClick={captureFace}
+        className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+      >
+        Capturar rostro
+      </button>
+      <p className="text-sm text-gray-600">{status}</p>
+    </section>
+  )
