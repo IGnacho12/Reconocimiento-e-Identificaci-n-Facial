@@ -82,7 +82,7 @@ export default function Test() {
         <header className="mb-2">
           <h2 className="text-lg font-semibold mb-1">Alumnos registrados</h2>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Lista de alumnos con reconocimiento facial
+            Lista de alumnos con reconocimiento facial 
           </p>
         
         </header>
