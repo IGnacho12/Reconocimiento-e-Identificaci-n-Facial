@@ -3,9 +3,16 @@ import * as faceapi from "face-api.js";
 import { useCamera } from "@/hooks/useCamera";
 import { useFaceApi } from "@/hooks/useFaceApi";
 import { read, write, destroy } from "@/localStorage";
+import useFetch from "../hooks/useFetch";
 import "../App.css";
 
-function Home() {
+
+import RegisterFaceCard from "@/components/registerFace"
+import BotonGuardar from "@/components/botonGuardar"
+
+export default function Test() {
+  // Obtener todos los estudiantes de PIGE
+  const { data: response } = useFetch("https://pig-edev.vercel.app/api/getStudents");
   const videoRef = useCamera();
   const canvasRef = useRef(null);
   const { faceMatcher, images, setImages, syncImages } = useFaceApi();
@@ -36,7 +43,7 @@ function Home() {
         .withFaceDescriptor();
 
       if (!detection) return;
-                                            // frame actual de la camraa
+      // frame actual de la camraa
       const match = faceMatcher.findBestMatch(detection.descriptor); //  faceMatcher, almacena todos los rostros, findBestMatch, lograra que esta expresion retorne, aquel rostro de faceMatcher que se asemeje mas al, detection.descriptor
       setImages((prev) =>
         prev.map((img) => ({
@@ -49,91 +56,101 @@ function Home() {
     return () => clearInterval(interval); // Evita que se siga ejecutando si el componente se desmonta
   }, [faceMatcher, setImages]);
 
-  // Subir imagen
-  const handleFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const id = Date.now();
-    const url = URL.createObjectURL(file);
-    write([...read(), { id, path: url, name: file.name }]);
-    syncImages();
-  };
 
-  // Eliminar imagen
-  const handleDelete = (id) => {
-    destroy(id);
-    syncImages();
-  };
+
+
+  // cuando llegan los alumnos, los pasamos al estado images
+  useEffect(() => {
+    if (response && Array.isArray(response)) {
+      // adaptamos los datos al formato esperado por tu sistema local
+      const adaptados = response.map(a => ({
+        id: a.id_estudiante,
+        name: a.nombre,
+        dni: a.dni,
+        path: a.avatar,
+        cursoYDivision: a.curso_y_division,
+        selected: false, // inicializamos
+      }));
+      setImages(adaptados);
+    }
+  }, [response, setImages]);
 
   return (
-    <>
-      <main className="flex flex-col md:flex-row h-screen w-screen bg-gray-50 p-6 gap-6">
-        {/* Cámara */}
-        <section className="flex-1 flex justify-center items-center bg-white rounded-2xl shadow-md p-4">
+    <main className="grid grid-cols-[320px_1fr] h-screen  text-gray-900 dark:text-gray-100">
+      {/* 🧾 Sidebar: Lista de alumnos */}
+      <aside className="flex flex-col gap-3 p-4 border-r border-gray-300/30 dark:border-gray-600/30 overflow-y-auto">
+        <header className="mb-2">
+          <h2 className="text-lg font-semibold mb-1">Alumnos registrados</h2>
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            Lista de alumnos con reconocimiento facial
+          </p>
+        
+        </header>
+
+        {/* Lista de RegisterFaceCard */}
+
+        {response?.map((alumno) => (
+          <RegisterFaceCard
+            key={alumno.id_estudiante} // 👈 1. Propiedad 'key' añadida
+            nombre={alumno.nombre} // 👈 2. Propiedad 'name' completada con datos
+            id={alumno.id_estudiante}
+            path={alumno.avatar}
+            selected={alumno.selected}
+          />
+        ))}
+
+
+
+      </aside>
+
+      {/* 🎥 Sección principal: cámara + alumno activo */}
+      <section className="flex flex-col items-center justify-start overflow-y-auto">
+        <header className="w-full text-center">
+          <h2 className="text-2xl font-bold">Alumno detectado</h2>
+
+          <div className="flex justify-center">
+            {images
+              .filter((img) => img.selected)
+              .map((img) => (
+                <RegisterFaceCard
+                  key={img.id}
+                  nombre={img.name}
+                  id={img.id}
+                  path={img.path}
+                  selected={img.selected}
+                  onDelete={handleDelete}
+                  className="w-2/7"
+                />
+              ))}
+
+            {/* Si no hay elementos seleccionados (el array filtrado está vacío) */}
+            {images.every(img => !img.selected) && <RegisterFaceCard
+              nombre="??"
+              dni="???"
+              cursoYDivision="??"
+              className="w-2/7"
+            />}
+          </div>
+        </header>
+
+        {/* Canvas de la cámara */}
+        <div className="relative flex justify-center items-center w-full max-w-4xl py-2">
           <canvas
             ref={canvasRef}
             width={1280}
             height={800}
-            className="w-full max-w-lg rounded-2xl"
+            className="w-full max-w-lg rounded-2xl scale-x-[-1]"
           />
           <video ref={videoRef} autoPlay className="hidden" />
-        </section>
 
-        {/* Input + lista */}
-        <section className="flex-1 flex flex-col items-center gap-4">
-          <label className="flex flex-col items-center justify-center w-full max-w-md p-8 border-2 border-dashed rounded-2xl cursor-pointer hover:border-gray-400 transition-colors bg-white shadow-md">
-            <span className="text-gray-700 mb-2 font-medium">
-              Seleccionar imagen
-            </span>
-            <input type="file" className="hidden" onChange={handleFile} />
-          </label>
+          {/* Overlay opcional: texto o ícono */}
+          {/* <span className="absolute text-gray-500 dark:text-gray-400 text-sm">Cámara activa...</span> */}
+        </div>
 
-          <div className="flex flex-wrap gap-4 justify-center w-full">
-            {images.map((img) => (
-              <div
-                key={img.id}
-                className={`flex flex-col items-center p-2 rounded-2xl ${
-                  img.selected
-                    ? "border-2 border-green-500"
-                    : "border border-gray-200"
-                }`}
-              >
-                <button
-                  className="self-end text-red-500 font-bold"
-                  onClick={() => handleDelete(img.id)}
-                >
-                  X
-                </button>
-                <img
-                  src={img.path}
-                  className="w-32 h-32 object-cover rounded-xl mt-2"
-                />
-                <span className="mt-1 text-gray-700">{img.name}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-    </>
+        <div className="py-4">
+          <BotonGuardar>Tomar asistencia!</BotonGuardar>
+        </div>
+      </section>
+    </main>
   );
 }
-
-export default Home;
-
-/*
-const videoRef = useCamera(); -> Accede al video proporcionado por la cámara
-const canvasRef = useRef(null); -> Referencia al elemento html donde se dibujara el stream de la cámara
-
-const ctx = canvasRef.current.getContext("2d"); El canvas es una hoja en blanco, y ctx, hace referencia al elmeneto que podrá dibujar sobre esta hoja en blanco, entonces, ctx puede dibujar sobre canvasRef.current con el contexto 2d
- ctx.drawImage(videoRef.current, 0, 0, 640, 480); y ahi se llama a esta propiedad, para que dibuje adentro de su hoja en blanco asignada, el valor de videoRef con 0 0, x, y
-
- 0 y 0 representan donde empezara a dibujarse la imagen con respecto al canvas del ctx
-
-
- 
-const detection = await faceapi
-  .detectSingleFace(canvasRef.current, new faceapi.TinyFaceDetectorOptions())
-  .withFaceLandmarks()
-  .withFaceDescriptor();
- En resumen, obtiene una representación matemática del rostro actualmente visible en el video.
-*/

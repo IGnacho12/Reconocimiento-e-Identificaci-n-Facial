@@ -11,6 +11,8 @@ import RegisterFaceCard from "@/components/registerFace"
 import BotonGuardar from "@/components/botonGuardar"
 
 export default function Test() {
+  // Obtener todos los estudiantes de PIGE
+  const { data: response } = useFetch("https://pig-edev.vercel.app/api/getStudents");
   const videoRef = useCamera();
   const canvasRef = useRef(null);
   const { faceMatcher, images, setImages, syncImages } = useFaceApi();
@@ -70,8 +72,6 @@ export default function Test() {
     syncImages();
   };
 
-  // Obtener todos los alumnos de PIGE
-  const { data: response, loading } = useFetch("https://pig-edev.vercel.app/api/getStudents");
 
   // cuando llegan los alumnos, los pasamos al estado images
   useEffect(() => {
