@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,6 +7,23 @@
     <title>package.json</title>
   </head>
   <body>
+    <!-- Fondos -->
+    <!-- Fondo modo claro  -->
+    <div
+      class="block dark:hidden fixed inset-0 -z-10 w-full min-h-screen bg-white bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem]"
+    ></div>
+
+    <!-- Fondo modo oscuro  -->
+    <!-- Gradiente que se queda fijo arriba -->
+
+    <div
+      class="block fixed inset-0 -z-10 w-full min-h-screen bg-[linear-gradient(to_right,#f0f0f0_1px,transparent_1px),linear-gradient(to_bottom,#f0f0f0_1px,transparent_1px)] bg-[size:6rem_4rem] dark:bg-[linear-gradient(to_right,#171717_1px,transparent_1px),linear-gradient(to_bottom,#171717_1px,transparent_1px)]"
+    ></div>
+
+    <!-- Fondo oscuro que cubre todo lo demás -->
+    <div
+      class="hidden dark:block absolute inset-0 w-full min-h-screen -z-20 bg-neutral-950"
+    ></div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

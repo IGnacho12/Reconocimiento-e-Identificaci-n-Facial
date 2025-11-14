@@ -11,7 +11,7 @@ export default function RegisterFaceCard({
 }) {
   return (
     <button
-      className={` flex items-center gap-3 px-4 py-3 rounded-lg hover:cursor-pointer hover:scale-105  transition-all shadow-sm border-2  ${className} ${selected ? "border-emerald-400" : ""}`}
+      className={` flex items-center w-full gap-3 px-4 py-3 rounded-lg hover:cursor-pointer hover:scale-105  transition-all shadow-sm border-2  ${className} ${selected ? "border-emerald-400" : ""}`}
     >
       {/* Avatar del estudiante */}
       <img

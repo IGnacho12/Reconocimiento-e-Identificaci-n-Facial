@@ -1,23 +1,38 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import * as faceapi from "face-api.js";
 import { useCamera } from "@/hooks/useCamera";
-import { useFaceApi } from "@/hooks/useFaceApi";
-import { read, write, destroy } from "@/localStorage";
+import { read, write } from "@/localStorage";
 import useFetch from "../hooks/useFetch";
+
 import "../App.css";
 
-
-import RegisterFaceCard from "@/components/registerFace"
-import BotonGuardar from "@/components/botonGuardar"
+import RegisterFaceCard from "@/components/registerFace";
+import BotonGuardar from "@/components/botonGuardar";
 
 export default function Test() {
-  // Obtener todos los estudiantes de PIGE
   const { data: response } = useFetch("https://pig-edev.vercel.app/api/alumnos/obtener");
+
   const videoRef = useCamera();
   const canvasRef = useRef(null);
-  const { faceMatcher, images, setImages, syncImages } = useFaceApi();
 
-  // Dibujar cámara en canvas
+  const [images, setImages] = useState([]);
+  const [faceMatcher, setFaceMatcher] = useState(null);
+
+  // ============================
+  // 1) Cargar modelos de face-api
+  // ============================
+  const loadModels = async () => {
+    const URL = "/data/models"; // asegúrate que exista
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(URL)
+    ]);
+  };
+
+  // ============================
+  // 2) Dibujar la cámara en canvas
+  // ============================
   useEffect(() => {
     const draw = () => {
       if (videoRef.current && canvasRef.current) {
@@ -29,126 +44,205 @@ export default function Test() {
     draw();
   }, [videoRef]);
 
-  // Detección facial
+  // ======================================================
+  // 3) Cuando llegan alumnos → setImages + generar descriptores
+  // ======================================================
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!canvasRef.current || !faceMatcher) return;
+    if (!response || !Array.isArray(response)) return;
 
-      const detection = await faceapi
-        .detectSingleFace(
-          canvasRef.current,
-          new faceapi.TinyFaceDetectorOptions()
-        )
+    const adaptados = response.map(a => ({
+      id: a.id_estudiante,
+      name: a.nombre,
+      dni: a.dni,
+      path: a.avatar,
+      cursoYDivision: a.curso_y_division,
+      selected: false
+    }));
+
+    setImages(adaptados);
+
+    const procesar = async () => {
+      await loadModels();
+
+      const saved = read("descriptors") || {};
+
+      for (const alumno of adaptados) {
+        if (!alumno.path) continue;
+        if (saved[alumno.id]) continue;
+
+        try {
+          const img = await faceapi.fetchImage(alumno.path);
+          const det = await faceapi
+            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+
+          if (det?.descriptor) {
+            saved[alumno.id] = Array.from(det.descriptor);
+            console.log("Descriptor generado:", alumno.name);
+          } else {
+            console.warn("No se encontró cara en avatar:", alumno.name);
+          }
+        } catch (err) {
+          console.error("ERROR avatar de", alumno.name, err);
+        }
+      }
+
+      write("descriptors", saved);
+
+      // Construimos el FaceMatcher
+      const labeled = Object.entries(saved).map(([id, desc]) =>
+        new faceapi.LabeledFaceDescriptors(id.toString(), [
+          Float32Array.from(desc)
+        ])
+      );
+
+      setFaceMatcher(new faceapi.FaceMatcher(labeled, 0.6));
+    };
+
+    procesar();
+  }, [response]);
+
+  // ======================================================
+  // 4) Detección en vivo
+  // ======================================================
+  useEffect(() => {
+    if (!faceMatcher) return;
+
+    const UMBRAL = 0.45;
+
+    const interval = setInterval(async () => {
+      if (!canvasRef.current) return;
+
+      const det = await faceapi
+        .detectSingleFace(canvasRef.current, new faceapi.TinyFaceDetectorOptions())
         .withFaceLandmarks()
         .withFaceDescriptor();
 
-      if (!detection) return;
-      // frame actual de la camraa
-      const match = faceMatcher.findBestMatch(detection.descriptor); //  faceMatcher, almacena todos los rostros, findBestMatch, lograra que esta expresion retorne, aquel rostro de faceMatcher que se asemeje mas al, detection.descriptor
-      setImages((prev) =>
-        prev.map((img) => ({
-          ...img,
-          selected: match.label === img.id.toString(),
-        }))
-      );
-    }, 1000);
+      if (!det) return;
 
-    return () => clearInterval(interval); // Evita que se siga ejecutando si el componente se desmonta
-  }, [faceMatcher, setImages]);
+      const match = faceMatcher.findBestMatch(det.descriptor);
 
+      if (match.label !== "unknown" && match.distance <= UMBRAL) {
+        const alumnoId = match.label;
+        const alumno = images.find(i => i.id.toString() === alumnoId);
 
+        if (alumno) {
+          console.log("RECONOCIDO:", alumno.name, " | distancia:", match.distance);
 
+          setImages(prev =>
+            prev.map(img => ({
+              ...img,
+              selected: img.id.toString() === alumnoId
+            }))
+          );
+        }
+      } else {
+        setImages(prev =>
+          prev.map(img => ({ ...img, selected: false }))
+        );
+      }
+    }, 900);
 
-  // cuando llegan los alumnos, los pasamos al estado images
-  useEffect(() => {
-    if (response && Array.isArray(response)) {
-      // adaptamos los datos al formato esperado por tu sistema local
-      const adaptados = response.map(a => ({
-        id: a.id_estudiante,
-        name: a.nombre,
-        dni: a.dni,
-        path: a.avatar,
-        cursoYDivision: a.curso_y_division,
-        selected: false, // inicializamos
-      }));
-      setImages(adaptados);
+    return () => clearInterval(interval);
+  }, [faceMatcher, images]);
+
+  async function tomarAsistencia() {
+    const alumnoSeleccionado = images.find(img => img.selected);
+
+    if (!alumnoSeleccionado) {
+      console.warn("No hay ningún alumno detectado.");
+      return;
     }
-  }, [response, setImages]);
+
+    const id = alumnoSeleccionado.id;
+
+    console.log("Enviando asistencia para ID:", id);
+
+    try {
+      const res = await fetch(
+        `https://pig-edev.vercel.app/api/alumnos/asistencia/registrarPorIdDeEstudiante?id_estudiante=${id}`,
+        {
+          method: "GET"
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(`Error del servidor: ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log("Guardado OK:", data);
+
+      // ejemplo: mostrar un feedback en pantalla
+      // setMensaje("Asistencia guardada correctamente");
+    } catch (err) {
+      console.error("Error guardando asistencia:", err);
+    }
+  }
 
   return (
-    <main className="grid grid-cols-[320px_1fr] h-screen  text-gray-900 dark:text-gray-100">
-      {/* 🧾 Sidebar: Lista de alumnos */}
-      <aside className="flex flex-col gap-3 p-4 border-r border-gray-300/30 dark:border-gray-600/30 overflow-y-auto">
+    <main className="grid grid-cols-[320px_1fr] h-screen text-gray-900 dark:text-gray-100">
+      {/* Sidebar */}
+      <aside className="flex flex-col gap-3 p-4 border-r border-gray-300/30 dark:border-gray-600/30 overflow-y-auto bg-white">
         <header className="mb-2">
-          <h2 className="text-lg font-semibold mb-1">Alumnos registrados</h2>
+          <h2 className="text-lg font-semibold">Alumnos registrados</h2>
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Lista de alumnos con reconocimiento facial 
+            Lista de alumnos con reconocimiento facial
           </p>
-        
         </header>
 
-        {/* Lista de RegisterFaceCard */}
-
-        {response?.map((alumno) => (
+        {images.map(alumno => (
           <RegisterFaceCard
-            key={alumno.id_estudiante} // 👈 1. Propiedad 'key' añadida
-            nombre={alumno.nombre} // 👈 2. Propiedad 'name' completada con datos
-            id={alumno.id_estudiante}
-            path={alumno.avatar}
+            key={alumno.id}
+            nombre={alumno.name}
+            id={alumno.id}
+            path={alumno.path}
             selected={alumno.selected}
           />
         ))}
-
-
-
       </aside>
 
-      {/* 🎥 Sección principal: cámara + alumno activo */}
-      <section className="flex flex-col items-center justify-start overflow-y-auto">
-        <header className="w-full text-center">
-          <h2 className="text-2xl font-bold">Alumno detectado</h2>
+      {/* Sección principal */}
+      <section className="flex flex-col items-center overflow-y-auto">
+        <h2 className="text-2xl font-bold mt-2">Alumno detectado</h2>
 
-          <div className="flex justify-center">
-            {images
-              .filter((img) => img.selected)
-              .map((img) => (
+        <section className="flex justify-center bg-white">
+          {images.some(img => img.selected)
+            ? images
+              .filter(img => img.selected)
+              .map(img => (
                 <RegisterFaceCard
                   key={img.id}
                   nombre={img.name}
                   id={img.id}
                   path={img.path}
-                  selected={img.selected}
-                  onDelete={handleDelete}
+                  selected={true}
                   className="w-2/7"
                 />
-              ))}
+              ))
+            : (
+              <RegisterFaceCard
+                nombre="??"
+                dni="???"
+                cursoYDivision="??"
+                className="w-2/7"
+              />
+            )}
+        </section>
 
-            {/* Si no hay elementos seleccionados (el array filtrado está vacío) */}
-            {images.every(img => !img.selected) && <RegisterFaceCard
-              nombre="??"
-              dni="???"
-              cursoYDivision="??"
-              className="w-2/7"
-            />}
-          </div>
-        </header>
-
-        {/* Canvas de la cámara */}
-        <div className="relative flex justify-center items-center w-full max-w-4xl py-2">
+        <div className="relative flex justify-center w-full max-w-4xl py-2">
           <canvas
             ref={canvasRef}
             width={1280}
             height={800}
-            className="w-full max-w-lg rounded-2xl scale-x-[-1]"
+            className="w-full max-w-lg rounded-2xl scale-x-[-1] "
           />
           <video ref={videoRef} autoPlay className="hidden" />
-
-          {/* Overlay opcional: texto o ícono */}
-          {/* <span className="absolute text-gray-500 dark:text-gray-400 text-sm">Cámara activa...</span> */}
         </div>
 
         <div className="py-4">
-          <BotonGuardar>Tomar asistencia!</BotonGuardar>
+          <BotonGuardar alHacerClick={tomarAsistencia} >Tomar asistencia!</BotonGuardar>
         </div>
       </section>
     </main>
