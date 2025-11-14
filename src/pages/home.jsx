@@ -198,6 +198,7 @@ export default function Test() {
             nombre={alumno.name}
             id={alumno.id}
             path={alumno.path}
+            cursoYDivision={alumno.cursoYDivision}
             selected={alumno.selected}
           />
         ))}
@@ -217,7 +218,9 @@ export default function Test() {
                   nombre={img.name}
                   id={img.id}
                   path={img.path}
+                  cursoYDivision={img.cursoYDivision}
                   selected={true}
+
                   className="w-2/7"
                 />
               ))
